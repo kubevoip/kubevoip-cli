@@ -1,6 +1,6 @@
 # KubeVoIP CLI
 
-Command-line tools for working with KubeVoIP Kubernetes resources.
+A CLI for creating and inspecting KubeVoIP Kubernetes resources.
 
 The package is published as `kubevoip` and exposes the `kubevoip` command:
 
@@ -41,8 +41,8 @@ Generate a manifest:
 kubevoip manifest sipuser --name alice --namespace telephony
 ```
 
-Create individual platform resources. Friendly create commands apply by default
-after a Kubernetes server-side dry-run:
+Create individual platform resources. Resource-specific create commands apply by
+default after a Kubernetes server-side dry-run:
 
 ```bash
 kubevoip --namespace telephony network-profile create public
