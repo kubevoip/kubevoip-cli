@@ -90,7 +90,10 @@ def load_cluster_crds(*, kubeconfig: str | None = None, context: str | None = No
     for crd in api.list_custom_resource_definition().items:
         if crd.spec.group != GROUP:
             continue
-        documents.append(api.api_client.sanitize_for_serialization(crd))
+        document = api.api_client.sanitize_for_serialization(crd)
+        document.setdefault("apiVersion", "apiextensions.k8s.io/v1")
+        document.setdefault("kind", "CustomResourceDefinition")
+        documents.append(document)
     return "\n---\n".join(yaml.safe_dump(document, sort_keys=False) for document in documents)
 
 

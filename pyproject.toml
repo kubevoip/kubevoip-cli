@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kubevoip"
-version = "0.1.0"
+version = "0.1.1"
 description = "Command-line interface for KubeVoIP Kubernetes resources."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -44,4 +44,3 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-
