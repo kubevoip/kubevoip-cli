@@ -295,6 +295,62 @@ def user_create(
     )
 
 
+@user.command("update")
+@click.argument("name")
+@click.option("--extension")
+@click.option("--gateway")
+@click.option("--dial-policy")
+@click.option("--auth-username")
+@click.option("--caller-id")
+@click.option("--password-secret")
+@click.option("--password-key", default="password", show_default=True)
+@click.option("--dry-run", is_flag=True)
+@click.option("--output", "-o", type=click.Choice(["yaml", "json"]), default="yaml")
+@pass_context
+def user_update(
+    ctx: Context,
+    name: str,
+    extension: str | None,
+    gateway: str | None,
+    dial_policy: str | None,
+    auth_username: str | None,
+    caller_id: str | None,
+    password_secret: str | None,
+    password_key: str,
+    dry_run: bool,
+    output: str,
+) -> None:
+    """Update a SIPUser by merging changes into the live resource."""
+    try:
+        resource = ctx.resource("sipuser")
+        existing = kube.get_custom(
+            group=resource.group,
+            version=resource.version,
+            plural=resource.plural,
+            name=name,
+            namespace=ctx.namespace,
+            scope=resource.scope,
+            kubeconfig=ctx.kubeconfig,
+            context=ctx.kube_context,
+        )
+        manifest = builders.sip_user_update(
+            existing,
+            namespace=ctx.namespace,
+            extension=extension,
+            gateway=gateway,
+            dial_policy=dial_policy,
+            auth_username=auth_username,
+            caller_id=caller_id,
+            password_secret=password_secret,
+            password_key=password_key,
+        )
+    except click.ClickException:
+        raise
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    emit_or_apply(ctx, manifest, dry_run=dry_run, output_format=output)
+
+
 @cli.group()
 def trunk() -> None:
     """Manage SIPTrunk resources."""

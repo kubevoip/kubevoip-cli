@@ -59,6 +59,37 @@ def test_user_builder_outputs_sipuser() -> None:
     assert manifest["spec"]["passwordSecretRef"] == {"name": "alice-sip", "key": "password"}
 
 
+def test_user_update_outputs_merged_sipuser() -> None:
+    existing = {
+        "apiVersion": "kubevoip.com/v1alpha1",
+        "kind": "SIPUser",
+        "metadata": {"name": "alice", "namespace": "telephony"},
+        "spec": {
+            "gatewayRef": {"name": "main"},
+            "dialPolicyRef": {"name": "internal"},
+            "extension": "100",
+            "authUsername": "alice",
+            "passwordSecretRef": {"name": "alice-sip", "key": "password"},
+        },
+    }
+    manifest = builders.sip_user_update(
+        existing,
+        namespace="telephony",
+        extension="101",
+        gateway=None,
+        dial_policy=None,
+        auth_username=None,
+        caller_id="Alice <101>",
+        password_secret=None,
+        password_key="password",
+    )
+    assert manifest["kind"] == "SIPUser"
+    assert manifest["metadata"] == {"name": "alice", "namespace": "telephony"}
+    assert manifest["spec"]["extension"] == "101"
+    assert manifest["spec"]["callerId"] == "Alice <101>"
+    assert manifest["spec"]["passwordSecretRef"] == {"name": "alice-sip", "key": "password"}
+
+
 def test_secret_builder_encodes_value() -> None:
     manifest = builders.secret(name="alice-sip", namespace="telephony", key="password", value="secret")
     assert manifest["kind"] == "Secret"

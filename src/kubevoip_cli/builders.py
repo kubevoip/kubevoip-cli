@@ -36,6 +36,44 @@ def sip_user(
     return {"apiVersion": API_VERSION, "kind": "SIPUser", "metadata": metadata(name, namespace), "spec": spec}
 
 
+def sip_user_update(
+    existing: dict[str, Any],
+    *,
+    namespace: str | None,
+    extension: str | None,
+    gateway: str | None,
+    dial_policy: str | None,
+    auth_username: str | None,
+    caller_id: str | None,
+    password_secret: str | None,
+    password_key: str,
+) -> dict[str, Any]:
+    name = existing.get("metadata", {}).get("name")
+    if not name:
+        raise ValueError("existing SIPUser is missing metadata.name")
+    spec = dict(existing.get("spec", {}))
+    if gateway:
+        spec["gatewayRef"] = {"name": gateway}
+    if dial_policy:
+        spec["dialPolicyRef"] = {"name": dial_policy}
+    if extension:
+        spec["extension"] = extension
+    if auth_username:
+        spec["authUsername"] = auth_username
+    if caller_id:
+        spec["callerId"] = caller_id
+    if password_secret:
+        spec["passwordSecretRef"] = {"name": password_secret, "key": password_key}
+    if spec == existing.get("spec", {}):
+        raise ValueError("at least one changed field must be provided")
+    return {
+        "apiVersion": existing.get("apiVersion", API_VERSION),
+        "kind": "SIPUser",
+        "metadata": metadata(name, namespace or existing.get("metadata", {}).get("namespace")),
+        "spec": spec,
+    }
+
+
 def sip_trunk(
     *,
     name: str,

@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import patch
 
 from click.testing import CliRunner
 
@@ -60,6 +61,41 @@ def test_user_create_dry_run() -> None:
     assert result.exit_code == 0
     assert "kind: SIPUser" in result.output
     assert "authUsername: alice" in result.output
+
+
+def test_user_update_dry_run_outputs_merged_manifest() -> None:
+    existing = {
+        "apiVersion": "kubevoip.com/v1alpha1",
+        "kind": "SIPUser",
+        "metadata": {"name": "alice", "namespace": "telephony"},
+        "spec": {
+            "gatewayRef": {"name": "main"},
+            "dialPolicyRef": {"name": "internal"},
+            "extension": "100",
+            "authUsername": "alice",
+            "passwordSecretRef": {"name": "alice-sip", "key": "password"},
+        },
+    }
+    with patch("kubevoip_cli.main.kube.get_custom", return_value=existing):
+        result = invoke(
+            [
+                "--namespace",
+                "telephony",
+                "user",
+                "update",
+                "alice",
+                "--extension",
+                "101",
+                "--caller-id",
+                "Alice <101>",
+                "--dry-run",
+            ]
+        )
+    assert result.exit_code == 0
+    assert "kind: SIPUser" in result.output
+    assert "extension: '101'" in result.output
+    assert "passwordSecretRef" in result.output
+    assert "name: alice-sip" in result.output
 
 
 def test_route_requires_exactly_one_target() -> None:

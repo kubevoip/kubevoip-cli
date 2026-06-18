@@ -49,6 +49,16 @@ kubevoip user create alice \
   --dry-run -o yaml
 ```
 
+Update a user's extension without re-entering the rest of the SIPUser spec. The
+CLI reads the live resource, merges the changed fields, then applies the result:
+
+```bash
+kubevoip user update alice \
+  --extension 101 \
+  --caller-id "Alice <101>" \
+  --namespace telephony
+```
+
 Create a SIP user Secret without putting the value in shell history:
 
 ```bash
@@ -65,4 +75,3 @@ uv run ruff check .
 uv run pytest
 uv run kubevoip --help
 ```
-
