@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kubevoip"
+version = "0.1.0"
+description = "Command-line interface for KubeVoIP Kubernetes resources."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [
+  { name = "KubeVoIP" },
+]
+dependencies = [
+  "click>=8.1.0",
+  "kubernetes>=30.0.0",
+  "pyyaml>=6.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "ruff>=0.6.0",
+]
+
+[project.urls]
+Homepage = "https://kubevoip.com"
+Documentation = "https://docs.kubevoip.com"
+Repository = "https://github.com/kubevoip/kubevoip-cli"
+
+[project.scripts]
+kubevoip = "kubevoip_cli.main:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kubevoip_cli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
