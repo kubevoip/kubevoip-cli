@@ -29,10 +29,13 @@ class Context:
         self.output = output
         self._resources: list[schema.ResourceDescriptor] | None = None
 
-    def resources(self) -> list[schema.ResourceDescriptor]:
+    def resources(self, *, prefer_cluster: bool = False) -> list[schema.ResourceDescriptor]:
         if self._resources is None:
+            schema_source = self.schema_source
+            if schema_source == "auto":
+                schema_source = "cluster" if prefer_cluster else "latest"
             content = discovery.resolve_schema(
-                schema_source=self.schema_source,
+                schema_source=schema_source,
                 schema_file=self.schema_file,
                 platform_ref=self.platform_ref,
                 kubeconfig=self.kubeconfig,
@@ -41,9 +44,9 @@ class Context:
             self._resources = schema.parse_resources(content)
         return self._resources
 
-    def resource(self, name: str) -> schema.ResourceDescriptor:
+    def resource(self, name: str, *, prefer_cluster: bool = False) -> schema.ResourceDescriptor:
         try:
-            return schema.find_resource(self.resources(), name)
+            return schema.find_resource(self.resources(prefer_cluster=prefer_cluster), name)
         except KeyError as exc:
             raise click.ClickException(str(exc)) from exc
 
@@ -61,7 +64,16 @@ pass_context = click.make_pass_decorator(Context)
     help="Read KubeVoIP CRDs from a local file.",
 )
 @click.option("--platform-ref", help="KubeVoIP platform git ref to fetch CRDs from, for example v0.5.0.")
-@click.option("--schema-source", type=click.Choice(["latest", "cluster", "file"]), default="latest", show_default=True)
+@click.option(
+    "--schema-source",
+    type=click.Choice(["auto", "latest", "cluster", "file"]),
+    default="auto",
+    show_default=True,
+    help=(
+        "Where to read KubeVoIP CRDs from. Auto uses cluster CRDs for live commands "
+        "and latest release CRDs for offline commands."
+    ),
+)
 @click.option("--output", "-o", type=click.Choice(["table", "yaml", "json"]), default="table", show_default=True)
 @click.pass_context
 def cli(
@@ -160,7 +172,7 @@ def explain(ctx: Context, target: str) -> None:
 @pass_context
 def get(ctx: Context, resource_name: str, name: str | None) -> None:
     """Get KubeVoIP resources from the current cluster."""
-    resource = ctx.resource(resource_name)
+    resource = ctx.resource(resource_name, prefer_cluster=True)
     try:
         if name:
             result = kube.get_custom(
@@ -217,7 +229,7 @@ def apply_file(ctx: Context, filename: str) -> None:
     try:
         result = kube.apply_yaml_file(
             filename,
-            resources=ctx.resources(),
+            resources=ctx.resources(prefer_cluster=True),
             namespace=ctx.namespace,
             kubeconfig=ctx.kubeconfig,
             context=ctx.kube_context,
@@ -234,7 +246,7 @@ def emit_or_apply(ctx: Context, manifest: dict[str, Any], *, dry_run: bool, outp
     try:
         resource = None
         if manifest.get("apiVersion", "").startswith("kubevoip.com/"):
-            resource = ctx.resource(manifest["kind"])
+            resource = ctx.resource(manifest["kind"], prefer_cluster=True)
         result = kube.apply_manifest(
             manifest,
             resource=resource,
@@ -258,7 +270,7 @@ def emit_or_apply_many(
         try:
             resource = None
             if manifest.get("apiVersion", "").startswith("kubevoip.com/"):
-                resource = ctx.resource(manifest["kind"])
+                resource = ctx.resource(manifest["kind"], prefer_cluster=True)
             kube.apply_manifest(
                 manifest,
                 resource=resource,
@@ -577,7 +589,7 @@ def user_update(
 ) -> None:
     """Update a SIPUser by merging changes into the live resource."""
     try:
-        resource = ctx.resource("sipuser")
+        resource = ctx.resource("sipuser", prefer_cluster=True)
         existing = kube.get_custom(
             group=resource.group,
             version=resource.version,
@@ -857,7 +869,7 @@ def secret_database(
 def status(ctx: Context) -> None:
     """Summarize KubeVoIP resources in a namespace."""
     rows: list[list[str]] = []
-    for resource in ctx.resources():
+    for resource in ctx.resources(prefer_cluster=True):
         if resource.scope != "Namespaced":
             continue
         try:

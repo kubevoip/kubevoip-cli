@@ -32,6 +32,24 @@ def test_manifest_sipuser() -> None:
     assert "namespace: telephony" in result.output
 
 
+def test_auto_schema_uses_latest_for_manifest() -> None:
+    with patch("kubevoip_cli.discovery.resolve_schema", return_value=Path(FIXTURE).read_text()) as resolve:
+        result = CliRunner().invoke(cli, ["manifest", "sipuser", "--name", "alice"])
+    assert result.exit_code == 0
+    assert "kind: SIPUser" in result.output
+    assert resolve.call_args.kwargs["schema_source"] == "latest"
+
+
+def test_auto_schema_uses_cluster_for_get() -> None:
+    with (
+        patch("kubevoip_cli.discovery.resolve_schema", return_value=Path(FIXTURE).read_text()) as resolve,
+        patch("kubevoip_cli.main.kube.list_custom", return_value={"items": []}),
+    ):
+        result = CliRunner().invoke(cli, ["--namespace", "telephony", "get", "sipuser"])
+    assert result.exit_code == 0
+    assert resolve.call_args.kwargs["schema_source"] == "cluster"
+
+
 def test_explain_nested_field() -> None:
     result = invoke(["explain", "sipuser.spec.passwordSecretRef"])
     assert result.exit_code == 0

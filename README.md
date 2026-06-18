@@ -7,25 +7,27 @@ The package is published as `kubevoip` and exposes the `kubevoip` command:
 ```bash
 uvx kubevoip --help
 uvx kubevoip api-resources
-uvx kubevoip --schema-source cluster --namespace telephony init
+uvx kubevoip --namespace telephony init
 ```
 
-The CLI discovers KubeVoIP API details from CRDs. By default it fetches the
-latest published KubeVoIP platform release and caches the CRD schema locally.
-You can also use a local CRD file or the CRDs installed in a Kubernetes cluster.
+The CLI discovers KubeVoIP API details from CRDs. By default it uses the
+installed cluster CRDs for live commands such as `init`, `get`, and `apply`,
+and uses the latest published KubeVoIP release for offline commands such as
+`manifest` and `explain`. You can override this with `--schema-source
+latest|cluster|file`.
 
 ## Examples
 
 Create a small platform with demo PostgreSQL and two SIP users:
 
 ```bash
-kubevoip --schema-source cluster --namespace telephony init
+kubevoip --namespace telephony init
 ```
 
 Use an existing PostgreSQL database instead:
 
 ```bash
-printf '%s' "$POSTGRES_PASSWORD" | kubevoip --schema-source cluster --namespace telephony init \
+printf '%s' "$POSTGRES_PASSWORD" | kubevoip --namespace telephony init \
   --database existing \
   --postgres-host "$POSTGRES_HOST" \
   --postgres-db kubevoip \
@@ -43,9 +45,9 @@ Create individual platform resources. Friendly create commands apply by default
 after a Kubernetes server-side dry-run:
 
 ```bash
-kubevoip --schema-source cluster --namespace telephony network-profile create public
-kubevoip --schema-source cluster --namespace telephony media-relay create main --network-profile public
-kubevoip --schema-source cluster --namespace telephony gateway create main \
+kubevoip --namespace telephony network-profile create public
+kubevoip --namespace telephony media-relay create main --network-profile public
+kubevoip --namespace telephony gateway create main \
   --database-secret postgres-app \
   --network-profile public \
   --media-relay main
