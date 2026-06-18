@@ -7,7 +7,7 @@ The package is published as `kubevoip` and exposes the `kubevoip` command:
 ```bash
 uvx kubevoip --help
 uvx kubevoip api-resources
-uvx kubevoip manifest sipuser --name alice --namespace telephony
+uvx kubevoip --schema-source cluster --namespace telephony init
 ```
 
 The CLI discovers KubeVoIP API details from CRDs. By default it fetches the
@@ -16,16 +16,39 @@ You can also use a local CRD file or the CRDs installed in a Kubernetes cluster.
 
 ## Examples
 
+Create a small platform with demo PostgreSQL and two SIP users:
+
+```bash
+kubevoip --schema-source cluster --namespace telephony init
+```
+
+Use an existing PostgreSQL database instead:
+
+```bash
+printf '%s' "$POSTGRES_PASSWORD" | kubevoip --schema-source cluster --namespace telephony init \
+  --database existing \
+  --postgres-host "$POSTGRES_HOST" \
+  --postgres-db kubevoip \
+  --postgres-user kubevoip \
+  --postgres-password-stdin
+```
+
 Generate a manifest:
 
 ```bash
 kubevoip manifest sipuser --name alice --namespace telephony
 ```
 
-Create a user. Friendly create commands apply by default after a Kubernetes
-server-side dry-run:
+Create individual platform resources. Friendly create commands apply by default
+after a Kubernetes server-side dry-run:
 
 ```bash
+kubevoip --schema-source cluster --namespace telephony network-profile create public
+kubevoip --schema-source cluster --namespace telephony media-relay create main --network-profile public
+kubevoip --schema-source cluster --namespace telephony gateway create main \
+  --database-secret postgres-app \
+  --network-profile public \
+  --media-relay main
 kubevoip user create alice \
   --extension 100 \
   --gateway main \

@@ -247,6 +247,261 @@ def emit_or_apply(ctx: Context, manifest: dict[str, Any], *, dry_run: bool, outp
     click.echo(render.output(result, fmt="json" if output_format == "json" else "yaml"), nl=False)
 
 
+def emit_or_apply_many(
+    ctx: Context, manifests: list[dict[str, Any]], *, dry_run: bool, output_format: str
+) -> None:
+    if dry_run:
+        click.echo(render.output(manifests, fmt="json" if output_format == "json" else "yaml"), nl=False)
+        return
+    applied = 0
+    for manifest in manifests:
+        try:
+            resource = None
+            if manifest.get("apiVersion", "").startswith("kubevoip.com/"):
+                resource = ctx.resource(manifest["kind"])
+            kube.apply_manifest(
+                manifest,
+                resource=resource,
+                namespace=ctx.namespace,
+                kubeconfig=ctx.kubeconfig,
+                context=ctx.kube_context,
+            )
+            applied += 1
+        except Exception as exc:
+            kind = manifest.get("kind", "resource")
+            name = manifest.get("metadata", {}).get("name", "<unknown>")
+            raise click.ClickException(f"failed to apply {kind}/{name}: {exc}") from exc
+    click.echo(render.output({"applied": applied}, fmt="json" if output_format == "json" else "yaml"), nl=False)
+
+
+@cli.group()
+def quickstart() -> None:
+    """Create optional quickstart support resources."""
+
+
+@quickstart.command("postgres")
+@click.option("--postgres-name", default="postgres", show_default=True)
+@click.option("--postgres-secret", default="postgres-app", show_default=True)
+@click.option("--database", default="kubevoip", show_default=True)
+@click.option("--database-user", default="kubevoip", show_default=True)
+@click.option("--database-password", default="kubevoip-demo-password", show_default=True)
+@click.option("--dry-run", is_flag=True)
+@click.option("--output", "-o", type=click.Choice(["yaml", "json"]), default="yaml")
+@pass_context
+def quickstart_postgres(
+    ctx: Context,
+    postgres_name: str,
+    postgres_secret: str,
+    database: str,
+    database_user: str,
+    database_password: str,
+    dry_run: bool,
+    output: str,
+) -> None:
+    """Create a demo PostgreSQL Deployment, Service, and connection Secret."""
+    if not ctx.namespace:
+        raise click.ClickException("--namespace is required")
+    manifests = builders.demo_postgres(
+        namespace=ctx.namespace,
+        postgres_name=postgres_name,
+        postgres_secret=postgres_secret,
+        database=database,
+        database_user=database_user,
+        database_password=database_password,
+    )
+    emit_or_apply_many(ctx, manifests, dry_run=dry_run, output_format=output)
+
+
+@cli.command()
+@click.option("--gateway", default="main", show_default=True)
+@click.option("--network-profile", default="public", show_default=True)
+@click.option("--media-relay", default="main", show_default=True)
+@click.option("--database", "database_mode", type=click.Choice(["demo", "existing"]), default="demo", show_default=True)
+@click.option("--database-secret", default="postgres-app", show_default=True)
+@click.option("--postgres-name", default="postgres", show_default=True)
+@click.option("--postgres-db", default="kubevoip", show_default=True)
+@click.option("--postgres-user", default="kubevoip", show_default=True)
+@click.option("--postgres-password", default="kubevoip-demo-password", show_default=True)
+@click.option("--postgres-host")
+@click.option("--postgres-port", default="5432", show_default=True)
+@click.option("--postgres-password-stdin", is_flag=True)
+@click.option("--postgres-password-file", type=click.Path(exists=True, dir_okay=False))
+@click.option("--two-phones/--no-two-phones", default=True, show_default=True)
+@click.option("--alice-password", default="alice-demo-password", show_default=True)
+@click.option("--bob-password", default="bob-demo-password", show_default=True)
+@click.option("--dry-run", is_flag=True)
+@click.option("--output", "-o", type=click.Choice(["yaml", "json"]), default="yaml")
+@pass_context
+def init(
+    ctx: Context,
+    gateway: str,
+    network_profile: str,
+    media_relay: str,
+    database_mode: str,
+    database_secret: str,
+    postgres_name: str,
+    postgres_db: str,
+    postgres_user: str,
+    postgres_password: str,
+    postgres_host: str | None,
+    postgres_port: str,
+    postgres_password_stdin: bool,
+    postgres_password_file: str | None,
+    two_phones: bool,
+    alice_password: str,
+    bob_password: str,
+    dry_run: bool,
+    output: str,
+) -> None:
+    """Create a minimal KubeVoIP platform, optionally with two demo phones."""
+    if not ctx.namespace:
+        raise click.ClickException("--namespace is required")
+
+    manifests: list[dict[str, Any]] = []
+    if database_mode == "demo":
+        manifests.extend(
+            builders.demo_postgres(
+                namespace=ctx.namespace,
+                postgres_name=postgres_name,
+                postgres_secret=database_secret,
+                database=postgres_db,
+                database_user=postgres_user,
+                database_password=postgres_password,
+            )
+        )
+    elif postgres_host or postgres_password_stdin or postgres_password_file:
+        if not postgres_host:
+            raise click.ClickException("--postgres-host is required when creating a database Secret")
+        password = read_secret_value(from_stdin=postgres_password_stdin, value_file=postgres_password_file)
+        manifests.append(
+            builders.database_secret(
+                name=database_secret,
+                namespace=ctx.namespace,
+                host=postgres_host,
+                port=postgres_port,
+                database=postgres_db,
+                username=postgres_user,
+                password=password,
+            )
+        )
+
+    manifests.extend(
+        builders.init_platform(
+            namespace=ctx.namespace,
+            gateway=gateway,
+            network_profile_name=network_profile,
+            media_relay_name=media_relay,
+            database_secret_name=database_secret,
+        )
+    )
+
+    if two_phones:
+        manifests.extend(
+            builders.two_phone_resources(
+                namespace=ctx.namespace,
+                gateway=gateway,
+                alice_password=alice_password,
+                bob_password=bob_password,
+            )
+        )
+
+    emit_or_apply_many(ctx, manifests, dry_run=dry_run, output_format=output)
+
+
+@cli.group("network-profile")
+def network_profile() -> None:
+    """Manage NetworkProfile resources."""
+
+
+@network_profile.command("create")
+@click.argument("name")
+@click.option("--local-network", multiple=True, default=("10.0.0.0/8",), show_default=True)
+@click.option("--dry-run", is_flag=True)
+@click.option("--output", "-o", type=click.Choice(["yaml", "json"]), default="yaml")
+@pass_context
+def network_profile_create(
+    ctx: Context, name: str, local_network: tuple[str, ...], dry_run: bool, output: str
+) -> None:
+    emit_or_apply(
+        ctx,
+        builders.network_profile(name=name, namespace=ctx.namespace, local_networks=local_network),
+        dry_run=dry_run,
+        output_format=output,
+    )
+
+
+@cli.group("media-relay")
+def media_relay() -> None:
+    """Manage MediaRelay resources."""
+
+
+@media_relay.command("create")
+@click.argument("name")
+@click.option("--network-profile", required=True)
+@click.option("--rtp-start", type=int, default=20000, show_default=True)
+@click.option("--rtp-end", type=int, default=20049, show_default=True)
+@click.option("--dry-run", is_flag=True)
+@click.option("--output", "-o", type=click.Choice(["yaml", "json"]), default="yaml")
+@pass_context
+def media_relay_create(
+    ctx: Context,
+    name: str,
+    network_profile: str,
+    rtp_start: int,
+    rtp_end: int,
+    dry_run: bool,
+    output: str,
+) -> None:
+    emit_or_apply(
+        ctx,
+        builders.media_relay(
+            name=name,
+            namespace=ctx.namespace,
+            network_profile_name=network_profile,
+            rtp_start=rtp_start,
+            rtp_end=rtp_end,
+        ),
+        dry_run=dry_run,
+        output_format=output,
+    )
+
+
+@cli.group()
+def gateway() -> None:
+    """Manage SIPGateway resources."""
+
+
+@gateway.command("create")
+@click.argument("name")
+@click.option("--database-secret", required=True)
+@click.option("--network-profile", required=True)
+@click.option("--media-relay", required=True)
+@click.option("--dry-run", is_flag=True)
+@click.option("--output", "-o", type=click.Choice(["yaml", "json"]), default="yaml")
+@pass_context
+def gateway_create(
+    ctx: Context,
+    name: str,
+    database_secret: str,
+    network_profile: str,
+    media_relay: str,
+    dry_run: bool,
+    output: str,
+) -> None:
+    emit_or_apply(
+        ctx,
+        builders.sip_gateway(
+            name=name,
+            namespace=ctx.namespace,
+            database_secret=database_secret,
+            network_profile_name=network_profile,
+            media_relay_name=media_relay,
+        ),
+        dry_run=dry_run,
+        output_format=output,
+    )
+
+
 @cli.group()
 def user() -> None:
     """Manage SIPUser resources."""
@@ -552,6 +807,46 @@ def secret_caller_id(
     emit_or_apply(
         ctx,
         builders.secret(name=name, namespace=ctx.namespace, key=key, value=value),
+        dry_run=dry_run,
+        output_format=output,
+    )
+
+
+@secret.command("database")
+@click.argument("name")
+@click.option("--host", required=True)
+@click.option("--port", default="5432", show_default=True)
+@click.option("--dbname", required=True)
+@click.option("--user", "database_user", required=True)
+@click.option("--password-stdin", is_flag=True)
+@click.option("--password-file", type=click.Path(exists=True, dir_okay=False))
+@click.option("--dry-run", is_flag=True)
+@click.option("--output", "-o", type=click.Choice(["yaml", "json"]), default="yaml")
+@pass_context
+def secret_database(
+    ctx: Context,
+    name: str,
+    host: str,
+    port: str,
+    dbname: str,
+    database_user: str,
+    password_stdin: bool,
+    password_file: str | None,
+    dry_run: bool,
+    output: str,
+) -> None:
+    password = read_secret_value(from_stdin=password_stdin, value_file=password_file)
+    emit_or_apply(
+        ctx,
+        builders.database_secret(
+            name=name,
+            namespace=ctx.namespace,
+            host=host,
+            port=port,
+            database=dbname,
+            username=database_user,
+            password=password,
+        ),
         dry_run=dry_run,
         output_format=output,
     )

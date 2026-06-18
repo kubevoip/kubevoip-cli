@@ -62,9 +62,38 @@ def server_side_apply(
         )
         return applied.to_dict()
 
+    if manifest.get("apiVersion") == "v1" and manifest.get("kind") == "Service":
+        api = client.CoreV1Api()
+        applied = api.patch_namespaced_service(
+            name=name,
+            namespace=manifest_namespace(manifest, namespace),
+            body=manifest,
+            dry_run=dry_run_value,
+            field_manager=FIELD_MANAGER,
+            force=True,
+            _content_type=APPLY_CONTENT_TYPE,
+        )
+        return applied.to_dict()
+
+    if manifest.get("apiVersion") == "apps/v1" and manifest.get("kind") == "Deployment":
+        api = client.AppsV1Api()
+        applied = api.patch_namespaced_deployment(
+            name=name,
+            namespace=manifest_namespace(manifest, namespace),
+            body=manifest,
+            dry_run=dry_run_value,
+            field_manager=FIELD_MANAGER,
+            force=True,
+            _content_type=APPLY_CONTENT_TYPE,
+        )
+        return applied.to_dict()
+
     if resource is None:
         kind = manifest.get("kind")
-        raise KubernetesError(f"unsupported manifest kind {kind!r}; only KubeVoIP resources and Secrets are supported")
+        raise KubernetesError(
+            f"unsupported manifest kind {kind!r}; "
+            "only KubeVoIP resources, Secrets, Services, and Deployments are supported"
+        )
 
     api = client.CustomObjectsApi()
     if resource.scope == "Namespaced":

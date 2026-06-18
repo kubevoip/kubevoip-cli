@@ -97,6 +97,52 @@ def test_secret_builder_encodes_value() -> None:
     assert yaml.safe_dump(manifest)
 
 
+def test_platform_resource_builders() -> None:
+    network = builders.network_profile(name="public", namespace="telephony", local_networks=("10.0.0.0/8",))
+    relay = builders.media_relay(
+        name="main",
+        namespace="telephony",
+        network_profile_name="public",
+        rtp_start=20000,
+        rtp_end=20049,
+    )
+    gateway = builders.sip_gateway(
+        name="main",
+        namespace="telephony",
+        database_secret="postgres-app",
+        network_profile_name="public",
+        media_relay_name="main",
+    )
+    assert network["kind"] == "NetworkProfile"
+    assert relay["kind"] == "MediaRelay"
+    assert gateway["kind"] == "SIPGateway"
+    assert gateway["spec"]["databaseSecretRef"] == {"name": "postgres-app"}
+
+
+def test_init_builder_groups_base_platform() -> None:
+    manifests = builders.init_platform(
+        namespace="telephony",
+        gateway="main",
+        network_profile_name="public",
+        media_relay_name="main",
+        database_secret_name="postgres-app",
+    )
+    assert [manifest["kind"] for manifest in manifests] == ["NetworkProfile", "MediaRelay", "SIPGateway"]
+
+
+def test_two_phone_builder_outputs_demo_call_path() -> None:
+    manifests = builders.two_phone_resources(
+        namespace="telephony",
+        gateway="main",
+        alice_password="alice-demo-password",
+        bob_password="bob-demo-password",
+    )
+    kinds = [manifest["kind"] for manifest in manifests]
+    assert kinds == ["Secret", "Secret", "CallScope", "DialPolicy", "SIPUser", "SIPUser", "CallRoute", "CallRoute"]
+    assert manifests[4]["metadata"]["name"] == "alice"
+    assert manifests[7]["spec"]["target"] == {"sipUserRef": "bob"}
+
+
 def test_trunk_builder_outputs_digest_refs_without_values() -> None:
     manifest = builders.sip_trunk(
         name="primary",
