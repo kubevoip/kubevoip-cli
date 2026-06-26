@@ -7,6 +7,7 @@ The package is published as `kubevoip` and exposes the `kubevoip` command:
 ```bash
 uvx kubevoip --help
 uvx kubevoip api-resources
+uvx kubevoip --namespace telephony operator install --version X.Y.Z --create-namespace
 uvx kubevoip --namespace telephony init
 ```
 
@@ -17,6 +18,20 @@ and uses the latest published KubeVoIP release for offline commands such as
 latest|cluster|file`.
 
 ## Examples
+
+Install or upgrade the KubeVoIP operator with the standard Helm repository:
+
+```bash
+kubevoip --namespace telephony operator install \
+  --version X.Y.Z \
+  --create-namespace
+```
+
+The install command wraps Helm and installs only the operator chart. Use
+`kubevoip init` after installation to create a demo database, SIP gateway,
+media relay, users, policies, and routes. Platform image releases can appear
+before the matching chart release because chart publication follows a reviewed
+release step.
 
 Create a small platform with demo PostgreSQL and two SIP users:
 
@@ -50,7 +65,9 @@ kubevoip --namespace telephony media-relay create main --network-profile public
 kubevoip --namespace telephony gateway create main \
   --database-secret postgres-app \
   --network-profile public \
-  --media-relay main
+  --media-relay main \
+  --sip-headers \
+  --sdp
 kubevoip user create alice \
   --extension 100 \
   --gateway main \

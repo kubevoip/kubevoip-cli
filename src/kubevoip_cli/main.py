@@ -5,7 +5,7 @@ from typing import Any
 
 import click
 
-from kubevoip_cli import __version__, builders, discovery, kube, render, schema
+from kubevoip_cli import __version__, builders, discovery, helm, kube, render, schema
 
 
 class Context:
@@ -63,7 +63,7 @@ pass_context = click.make_pass_decorator(Context)
     type=click.Path(exists=True, dir_okay=False),
     help="Read KubeVoIP CRDs from a local file.",
 )
-@click.option("--platform-ref", help="KubeVoIP platform git ref to fetch CRDs from, for example v0.5.0.")
+@click.option("--platform-ref", help="KubeVoIP platform git ref to fetch CRDs from, for example vX.Y.Z.")
 @click.option(
     "--schema-source",
     type=click.Choice(["auto", "latest", "cluster", "file"]),
@@ -488,6 +488,14 @@ def gateway() -> None:
 @click.option("--database-secret", required=True)
 @click.option("--network-profile", required=True)
 @click.option("--media-relay", required=True)
+@click.option("--sip-headers", is_flag=True, help="Enable single-line SIP header logging on this gateway.")
+@click.option("--sdp", is_flag=True, help="Include SDP bodies in SIP message logs when present.")
+@click.option("--homer", is_flag=True, help="Enable HOMER/HEP SIP capture export.")
+@click.option("--hep-address", default="homer-heplify.telemetry.svc.cluster.local", show_default=True)
+@click.option("--hep-port", type=int, default=9060, show_default=True)
+@click.option("--hep-transport", type=click.Choice(["udp"]), default="udp", show_default=True)
+@click.option("--capture-mode", type=click.Choice(["transaction", "dialog"]), default="transaction", show_default=True)
+@click.option("--include-payload/--no-include-payload", default=True, show_default=True)
 @click.option("--dry-run", is_flag=True)
 @click.option("--output", "-o", type=click.Choice(["yaml", "json"]), default="yaml")
 @pass_context
@@ -497,6 +505,14 @@ def gateway_create(
     database_secret: str,
     network_profile: str,
     media_relay: str,
+    sip_headers: bool,
+    sdp: bool,
+    homer: bool,
+    hep_address: str,
+    hep_port: int,
+    hep_transport: str,
+    capture_mode: str,
+    include_payload: bool,
     dry_run: bool,
     output: str,
 ) -> None:
@@ -508,6 +524,14 @@ def gateway_create(
             database_secret=database_secret,
             network_profile_name=network_profile,
             media_relay_name=media_relay,
+            sip_headers=sip_headers,
+            sdp=sdp,
+            homer=homer,
+            hep_address=hep_address,
+            hep_port=hep_port,
+            hep_transport=hep_transport,
+            capture_mode=capture_mode,
+            include_payload=include_payload,
         ),
         dry_run=dry_run,
         output_format=output,
@@ -890,6 +914,54 @@ def status(ctx: Context) -> None:
         click.echo(render.json_dump([{"kind": row[0], "name": row[1], "phase": row[2]} for row in rows]), nl=False)
     else:
         click.echo(render.table(["Kind", "Name", "Phase"], rows), nl=False)
+
+
+@cli.group()
+def operator() -> None:
+    """Install and manage the KubeVoIP operator."""
+
+
+@operator.command("install")
+@click.option("--version", "chart_version", required=True, help="KubeVoIP chart version to install.")
+@click.option("--release-name", default="kubevoip", show_default=True)
+@click.option("--oci", is_flag=True, help="Install the chart from GHCR OCI instead of charts.kubevoip.com.")
+@click.option("--create-namespace", is_flag=True)
+@click.option("--wait", is_flag=True)
+@click.option("--timeout")
+@click.option("-f", "--values", "value_files", multiple=True, type=click.Path(dir_okay=False))
+@click.option("--set", "set_values", multiple=True)
+@pass_context
+def operator_install(
+    ctx: Context,
+    chart_version: str,
+    release_name: str,
+    oci: bool,
+    create_namespace: bool,
+    wait: bool,
+    timeout: str | None,
+    value_files: tuple[str, ...],
+    set_values: tuple[str, ...],
+) -> None:
+    """Install or upgrade the KubeVoIP operator with Helm."""
+    if not ctx.namespace:
+        raise click.ClickException("--namespace is required")
+    try:
+        helm.install_operator(
+            release_name=release_name,
+            namespace=ctx.namespace,
+            version=chart_version,
+            kubeconfig=ctx.kubeconfig,
+            kube_context=ctx.kube_context,
+            oci=oci,
+            create_namespace=create_namespace,
+            wait=wait,
+            timeout=timeout,
+            values=value_files,
+            set_values=set_values,
+        )
+    except helm.HelmError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Installed KubeVoIP operator release {release_name} in namespace {ctx.namespace}")
 
 
 if __name__ == "__main__":

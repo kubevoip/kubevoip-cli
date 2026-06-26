@@ -33,6 +33,30 @@ def test_explains_nested_field() -> None:
     assert sorted(field["properties"]) == ["key", "name"]
 
 
+def test_explains_gateway_observability_fields() -> None:
+    resource = schema.find_resource(resources(), "sipgateway")
+
+    path, field, required = schema.field_schema(resource, "spec.observability.sipHeaders.enabled")
+    assert path == "spec.observability.sipHeaders.enabled"
+    assert schema.schema_type(field) == "boolean"
+    assert required is False
+    assert "default=False" in schema.schema_constraints(field)
+
+    path, field, required = schema.field_schema(resource, "spec.observability.sdp.enabled")
+    assert path == "spec.observability.sdp.enabled"
+    assert schema.schema_type(field) == "boolean"
+    assert required is False
+    assert "default=False" in schema.schema_constraints(field)
+
+    path, field, _ = schema.field_schema(resource, "spec.observability.capture.captureMode")
+    assert path == "spec.observability.capture.captureMode"
+    assert schema.schema_type(field) == "enum(transaction, dialog)"
+    assert "default=transaction" in schema.schema_constraints(field)
+
+    _, field, _ = schema.field_schema(resource, "spec.observability.capture")
+    assert "HOMER capture requires includePayload=true" in schema.schema_constraints(field)
+
+
 def test_generates_skeleton_manifest() -> None:
     resource = schema.find_resource(resources(), "sipuser")
     manifest = schema.manifest_for(resource, name="alice", namespace="telephony")
@@ -117,6 +141,37 @@ def test_platform_resource_builders() -> None:
     assert relay["kind"] == "MediaRelay"
     assert gateway["kind"] == "SIPGateway"
     assert gateway["spec"]["databaseSecretRef"] == {"name": "postgres-app"}
+    assert "observability" not in gateway["spec"]
+
+
+def test_gateway_builder_outputs_observability() -> None:
+    gateway = builders.sip_gateway(
+        name="main",
+        namespace="telephony",
+        database_secret="postgres-app",
+        network_profile_name="public",
+        media_relay_name="main",
+        sip_headers=True,
+        sdp=True,
+        homer=True,
+        hep_address="homer-hep.homer.svc.cluster.local",
+        hep_port=9060,
+        hep_transport="udp",
+        capture_mode="dialog",
+        include_payload=False,
+    )
+    observability = gateway["spec"]["observability"]
+    assert observability["sipHeaders"] == {"enabled": True}
+    assert observability["sdp"] == {"enabled": True}
+    assert observability["capture"] == {
+        "enabled": True,
+        "type": "Homer",
+        "hepAddress": "homer-hep.homer.svc.cluster.local",
+        "hepPort": 9060,
+        "hepTransport": "udp",
+        "captureMode": "dialog",
+        "includePayload": False,
+    }
 
 
 def test_init_builder_groups_base_platform() -> None:

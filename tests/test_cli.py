@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -283,6 +284,176 @@ def test_gateway_create_dry_run() -> None:
     assert result.exit_code == 0
     assert "kind: SIPGateway" in result.output
     assert "databaseSecretRef" in result.output
+    assert "observability" not in result.output
+
+
+def test_gateway_create_can_enable_sip_and_sdp_logging() -> None:
+    result = invoke(
+        [
+            "--namespace",
+            "telephony",
+            "gateway",
+            "create",
+            "main",
+            "--database-secret",
+            "postgres-app",
+            "--network-profile",
+            "public",
+            "--media-relay",
+            "main",
+            "--sip-headers",
+            "--sdp",
+            "--dry-run",
+        ]
+    )
+    assert result.exit_code == 0
+    assert "observability:" in result.output
+    assert "sipHeaders:" in result.output
+    assert "sdp:" in result.output
+    assert "enabled: true" in result.output
+
+
+def test_gateway_create_can_enable_homer_capture() -> None:
+    result = invoke(
+        [
+            "--namespace",
+            "telephony",
+            "gateway",
+            "create",
+            "main",
+            "--database-secret",
+            "postgres-app",
+            "--network-profile",
+            "public",
+            "--media-relay",
+            "main",
+            "--homer",
+            "--hep-address",
+            "homer-hep.homer.svc.cluster.local",
+            "--hep-port",
+            "9061",
+            "--capture-mode",
+            "dialog",
+            "--no-include-payload",
+            "--dry-run",
+        ]
+    )
+    assert result.exit_code == 0
+    assert "capture:" in result.output
+    assert "type: Homer" in result.output
+    assert "hepAddress: homer-hep.homer.svc.cluster.local" in result.output
+    assert "hepPort: 9061" in result.output
+    assert "hepTransport: udp" in result.output
+    assert "captureMode: dialog" in result.output
+    assert "includePayload: false" in result.output
+
+
+def test_explain_gateway_observability_field() -> None:
+    result = invoke(["explain", "sipgateway.spec.observability.sipHeaders.enabled"])
+    assert result.exit_code == 0
+    assert "SIPGateway.spec.observability.sipHeaders.enabled" in result.output
+    assert "Type: boolean" in result.output
+
+
+def test_operator_install_classic_helm() -> None:
+    with patch("kubevoip_cli.helm.subprocess.run") as run:
+        result = CliRunner().invoke(
+            cli,
+            [
+                "--namespace",
+                "telephony",
+                "--kubeconfig",
+                "/tmp/kubeconfig",
+                "--context",
+                "lab",
+                "operator",
+                "install",
+                "--version",
+                "0.6.7",
+                "--create-namespace",
+                "--wait",
+                "--timeout",
+                "5m",
+                "-f",
+                "values.yaml",
+                "--set",
+                "image.pullPolicy=Always",
+            ],
+        )
+    assert result.exit_code == 0
+    calls = [call.args[0] for call in run.call_args_list]
+    assert calls[0] == ["helm", "repo", "add", "kubevoip", "https://charts.kubevoip.com", "--force-update"]
+    assert calls[1] == ["helm", "repo", "update"]
+    assert calls[2] == [
+        "helm",
+        "upgrade",
+        "--install",
+        "kubevoip",
+        "kubevoip/kubevoip",
+        "--version",
+        "0.6.7",
+        "--namespace",
+        "telephony",
+        "--kubeconfig",
+        "/tmp/kubeconfig",
+        "--kube-context",
+        "lab",
+        "--create-namespace",
+        "--wait",
+        "--timeout",
+        "5m",
+        "-f",
+        "values.yaml",
+        "--set",
+        "image.pullPolicy=Always",
+    ]
+
+
+def test_operator_install_oci_skips_repo_commands() -> None:
+    with patch("kubevoip_cli.helm.subprocess.run") as run:
+        result = CliRunner().invoke(
+            cli,
+            ["--namespace", "telephony", "operator", "install", "--version", "0.6.7", "--oci"],
+        )
+    assert result.exit_code == 0
+    calls = [call.args[0] for call in run.call_args_list]
+    assert len(calls) == 1
+    assert calls[0][4] == "oci://ghcr.io/kubevoip/charts/kubevoip"
+
+
+def test_operator_install_requires_version() -> None:
+    result = CliRunner().invoke(cli, ["--namespace", "telephony", "operator", "install"])
+    assert result.exit_code != 0
+    assert "Missing option '--version'" in result.output
+
+
+def test_operator_install_requires_namespace() -> None:
+    result = CliRunner().invoke(cli, ["operator", "install", "--version", "0.6.7"])
+    assert result.exit_code != 0
+    assert "--namespace is required" in result.output
+
+
+def test_operator_install_reports_missing_helm() -> None:
+    with patch("kubevoip_cli.helm.subprocess.run", side_effect=FileNotFoundError):
+        result = CliRunner().invoke(
+            cli,
+            ["--namespace", "telephony", "operator", "install", "--version", "0.6.7"],
+        )
+    assert result.exit_code != 0
+    assert "helm is required" in result.output
+
+
+def test_operator_install_reports_helm_failure() -> None:
+    with patch(
+        "kubevoip_cli.helm.subprocess.run",
+        side_effect=subprocess.CalledProcessError(1, ["helm", "repo", "update"]),
+    ):
+        result = CliRunner().invoke(
+            cli,
+            ["--namespace", "telephony", "operator", "install", "--version", "0.6.7"],
+        )
+    assert result.exit_code != 0
+    assert "helm command failed" in result.output
 
 
 def test_database_secret_dry_run_from_stdin() -> None:

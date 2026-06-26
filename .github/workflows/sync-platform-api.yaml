@@ -1,0 +1,57 @@
+name: Sync Platform API
+on:
+  workflow_dispatch:
+    inputs:
+      platform_ref:
+        description: Platform repository ref to sync from.
+        required: false
+        default: main
+  repository_dispatch:
+    types: [platform-release]
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Resolve platform ref
+        id: platform
+        shell: bash
+        run: |
+          ref="${{ github.event.client_payload.ref || github.event.inputs.platform_ref || 'main' }}"
+          version="${{ github.event.client_payload.version || github.event.inputs.platform_ref || 'main' }}"
+          branch_ref="${ref//\//-}"
+          echo "ref=${ref}" >> "${GITHUB_OUTPUT}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "branch_ref=${branch_ref}" >> "${GITHUB_OUTPUT}"
+      - uses: actions/checkout@v6
+        with:
+          repository: kubevoip/kubevoip
+          path: _platform
+          ref: ${{ steps.platform.outputs.ref }}
+      - uses: astral-sh/setup-uv@v8.2.0
+      - name: Sync CRD fixture
+        run: cp _platform/config/crd/platform-crds.yaml tests/fixtures/platform-crds.yaml
+      - name: Verify CRD fixture matches platform ref
+        run: diff -u _platform/config/crd/platform-crds.yaml tests/fixtures/platform-crds.yaml
+      - name: Write PR body
+        run: |
+          cat > /tmp/sync-pr-body.md <<'BODY'
+          Syncs the CLI CRD fixture with kubevoip/kubevoip `${{ steps.platform.outputs.ref }}`.
+
+          This automated PR verifies the fixture, schema tests, and currently supported CLI surfaces.
+
+          Manual follow-up: review CLI command and builder coverage for any newly added platform API fields beyond the currently maintained SIPGateway observability surface.
+          BODY
+      - run: uv sync --extra dev
+      - run: uv run --extra=dev ruff check .
+      - run: uv run --extra=dev python -m pytest
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          branch: sync/platform-api-${{ steps.platform.outputs.branch_ref }}
+          delete-branch: true
+          title: Sync CLI with KubeVoIP ${{ steps.platform.outputs.version }}
+          commit-message: Sync CLI with KubeVoIP ${{ steps.platform.outputs.version }}
+          body-path: /tmp/sync-pr-body.md

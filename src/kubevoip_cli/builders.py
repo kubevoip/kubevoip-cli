@@ -282,21 +282,47 @@ def sip_gateway(
     database_secret: str,
     network_profile_name: str,
     media_relay_name: str,
+    sip_headers: bool = False,
+    sdp: bool = False,
+    homer: bool = False,
+    hep_address: str = "homer-heplify.telemetry.svc.cluster.local",
+    hep_port: int = 9060,
+    hep_transport: str = "udp",
+    capture_mode: str = "transaction",
+    include_payload: bool = True,
 ) -> dict[str, Any]:
+    spec: dict[str, Any] = {
+        "replicas": 1,
+        "databaseSecretRef": {"name": database_secret},
+        "networkProfileRef": {"name": network_profile_name},
+        "mediaRelayRef": {"name": media_relay_name},
+        "service": {
+            "type": "LoadBalancer",
+            "externalTrafficPolicy": "Local",
+        },
+    }
+    observability: dict[str, Any] = {}
+    if sip_headers:
+        observability["sipHeaders"] = {"enabled": True}
+    if sdp:
+        observability["sdp"] = {"enabled": True}
+    if homer:
+        observability["capture"] = {
+            "enabled": True,
+            "type": "Homer",
+            "hepAddress": hep_address,
+            "hepPort": hep_port,
+            "hepTransport": hep_transport,
+            "captureMode": capture_mode,
+            "includePayload": include_payload,
+        }
+    if observability:
+        spec["observability"] = observability
     return {
         "apiVersion": API_VERSION,
         "kind": "SIPGateway",
         "metadata": metadata(name, namespace),
-        "spec": {
-            "replicas": 1,
-            "databaseSecretRef": {"name": database_secret},
-            "networkProfileRef": {"name": network_profile_name},
-            "mediaRelayRef": {"name": media_relay_name},
-            "service": {
-                "type": "LoadBalancer",
-                "externalTrafficPolicy": "Local",
-            },
-        },
+        "spec": spec,
     }
 
 
